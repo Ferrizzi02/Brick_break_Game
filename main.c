@@ -35,8 +35,8 @@ int db;
 #define Y_PLAYER       195
 #define VEL_PLAYER     2
 #define COR_PLAYER     0xFFFFFF
-#define DURACAO_EXPANSAO 200
-#define DURACAO_RELOGIO 200  // mesmo periodo do contador dos outros poderes
+#define DURACAO_EXPANSAO 3000
+#define DURACAO_RELOGIO 3000  // mesmo periodo do contador dos outros poderes
 #define MULTIPLICADOR_DELAY_RELOGIO 2 // 2x o delay normal = jogo mais devagar
 
 short player_x;
@@ -402,7 +402,7 @@ int main(void) {
     col_offset = (db == 8) ? 1 : 0;
 
     /* create a message to be displayed on the video and LCD displays */
-
+    Reinicio:
     TelaInicial();
 
     char text_top_row[40]    = "             \0";
@@ -449,6 +449,9 @@ int main(void) {
         //RESET
         if(botoes & 0x04) {
             Reset(&novo_x);
+            video_text(5, 55, text_top_row);
+            video_text(20, 55, text_bottom_row);
+            goto Reinicio;
         }
 
         if (novo_x < 10){
@@ -546,6 +549,9 @@ int main(void) {
                     free(bolas);
                     bolas = NULL;
                     // Nenhuma bola restante: game over
+                    draw_background(0,0,gameover,320,240);
+                    video_text(5, 55, text_top_row);
+                    video_text(20, 55, text_bottom_row);
                     while(1);
                 }
                 b--; // corrige o indice apos remocao
@@ -667,6 +673,12 @@ int main(void) {
                 video_box(player_x, Y_PLAYER, player_x + LARGURA_PLAYER - 1, Y_PLAYER + ALTURA_PLAYER - 1, resample_rgb(db, COR_PLAYER));
             }
         }
+        if(score == 500){
+            draw_background(0,0,ganhou,320,240);
+            video_text(5, 55, text_top_row);
+            video_text(20, 55, text_bottom_row);
+            while(1);
+        }
 
         // Controla a duracao do efeito do relogio (contador proprio, independente do contador_expansao)
         if (contador_relogio > 0) {
@@ -678,7 +690,7 @@ int main(void) {
             delay(50000 * MULTIPLICADOR_DELAY_RELOGIO);
         }
         else {
-            delay(50000); // delay para controlar a velocidade do jogo
+            delay(40000); // delay para controlar a velocidade do jogo
         }
     }
 }
