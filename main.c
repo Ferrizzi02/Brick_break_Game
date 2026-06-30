@@ -1,6 +1,6 @@
 #include "address_map_arm.h"
 #include <stdbool.h>
-
+#include <stdlib.h>
 
 // -------- FUNÇÕES DO CÓDIGO EXEMPLO-----------------
 
@@ -53,13 +53,43 @@ typedef struct{
 }Bola;
 
 typedef struct {
+    short Pos_X;
+    short Pos_Y;
+    bool  Ativo;
+} Poder;
+
+typedef struct {
     short Pox_X;
     short Pos_Y;
     short Type;
 }Poderes;
 
-// Instancia global da estrutura da bola
-Bola bola;
+// Array dinamico de bolas
+Bola *bolas = NULL;
+int num_bolas = 0;
+
+// Array dinamico de poderes
+Poder *poderes = NULL;
+int num_poderes = 0;
+
+// Posicoes hardcoded dos blocos especiais (row, col)
+#define BLOCO_ESPECIAL_1_ROW 2
+#define BLOCO_ESPECIAL_1_COL 4
+#define BLOCO_ESPECIAL_2_ROW 2
+#define BLOCO_ESPECIAL_2_COL 5
+
+// Sprite do poder (duplicar bola) - exportado do Piskel
+// 0xff000000 = preto, 0xffff0000 = vermelho
+static int sprite_poder[8][8] = {
+    { 0xff000000, 0xff000000, 0xff000000, 0xffff0000, 0xffff0000, 0xffff0000, 0xffff0000, 0xffff0000 },
+    { 0xffff0000, 0xffff0000, 0xffff0000, 0xff000000, 0xffff0000, 0xffff0000, 0xffff0000, 0xffff0000 },
+    { 0xffff0000, 0xffff0000, 0xffff0000, 0xff000000, 0xffff0000, 0xffff0000, 0xffff0000, 0xffff0000 },
+    { 0xffff0000, 0xff000000, 0xff000000, 0xffff0000, 0xffff0000, 0xff000000, 0xffff0000, 0xff000000 },
+    { 0xff000000, 0xffff0000, 0xffff0000, 0xffff0000, 0xffff0000, 0xffff0000, 0xff000000, 0xffff0000 },
+    { 0xffff0000, 0xff000000, 0xff000000, 0xff000000, 0xffff0000, 0xff000000, 0xffff0000, 0xff000000 },
+    { 0xffff0000, 0xffff0000, 0xffff0000, 0xffff0000, 0xffff0000, 0xffff0000, 0xffff0000, 0xffff0000 },
+    { 0xffff0000, 0xffff0000, 0xffff0000, 0xffff0000, 0xffff0000, 0xffff0000, 0xffff0000, 0xffff0000 }
+};
 
 // Do stackoverflow.
 // Muda dinâmicamente a cor do bloco dependendo da fila
@@ -73,9 +103,10 @@ void EstadoInicial(){
     //Lógica dos blocos, vão ser 5*10 blocos
     short x =10; short y = 10;
     int db;
-
-    for(int i=0; i<5; i++){
-        for(int j=0; j<10; j++){
+    int i = 0;
+    int j = 0;
+    for(i=0; i<5; i++){
+        for(j=0; j<10; j++){
             blocos[i][j].Type = 0;
             blocos[i][j].Pos_X = x + (j * (LARGURA_BLOCO+1));
             blocos[i][j].Pos_Y = y + (i * (ALTURA_BLOCO +1));
@@ -102,9 +133,100 @@ void AtualizarScore(){
 }
 
 void delay(int delay){
-    for(volatile int i = 0; i < delay; i++);
+    volatile int i = 0;
+    for(i = 0; i < delay; i++);
 }
 
+// Inicializa o array dinamico com uma unica bola
+void inicializar_bolas() {
+    num_bolas = 1;
+    bolas = (Bola *)malloc(sizeof(Bola));
+    bolas[0].Pos_X    = 155;
+    bolas[0].Pos_Y    = Y_PLAYER - 15;
+    bolas[0].Type_mov = 0;
+}
+
+// Retorna o tipo de movimento espelhado horizontalmente
+short espelho_horizontal(short tipo) {
+    if (tipo == 2) return 3;
+    if (tipo == 3) return 2;
+    if (tipo == 4) return 5;
+    if (tipo == 5) return 4;
+    return tipo; // 0 e 1 nao mudam (movimento vertical puro)
+}
+
+// Duplica todas as bolas atuais, cada nova bola sai na mesma posicao em direcao oposta
+void duplicar_bolas() {
+    bolas = (Bola *)realloc(bolas, sizeof(Bola) * num_bolas * 2);
+    int i = 0;
+    for (i = 0; i < num_bolas; i++) {
+        bolas[num_bolas + i].Pos_X    = bolas[i].Pos_X;
+        bolas[num_bolas + i].Pos_Y    = bolas[i].Pos_Y;
+        bolas[num_bolas + i].Type_mov = espelho_horizontal(bolas[i].Type_mov);
+    }
+    num_bolas *= 2;
+}
+
+// Adiciona um novo poder ao array dinamico na posicao indicada
+void adicionar_poder(short x, short y) {
+    num_poderes++;
+    poderes = (Poder *)realloc(poderes, sizeof(Poder) * num_poderes);
+    poderes[num_poderes - 1].Pos_X = x;
+    poderes[num_poderes - 1].Pos_Y = y;
+    poderes[num_poderes - 1].Ativo = true;
+}
+
+// Remove um poder do array compactando os elementos restantes
+void remover_poder(int idx, short background_color) {
+    // apaga da tela
+    video_box(poderes[idx].Pos_X, poderes[idx].Pos_Y,
+              poderes[idx].Pos_X + 7, poderes[idx].Pos_Y + 7,
+              background_color);
+    // compacta o array removendo o elemento idx
+    int i = 0;
+    for (i = idx; i < num_poderes - 1; i++)
+        poderes[i] = poderes[i + 1];
+    num_poderes--;
+    if (num_poderes > 0)
+        poderes = (Poder *)realloc(poderes, sizeof(Poder) * num_poderes);
+    else {
+        free(poderes);
+        poderes = NULL;
+    }
+}
+
+// Atualiza posicao de todos os poderes, verifica colisao com player e saida de tela
+void atualizar_poderes(short background_color) {
+    int i = 0;
+    for (i = num_poderes - 1; i >= 0; i--) {
+        // apaga posicao antiga
+        video_box(poderes[i].Pos_X, poderes[i].Pos_Y,
+                  poderes[i].Pos_X + 7, poderes[i].Pos_Y + 7,
+                  background_color);
+
+        // move para baixo
+        poderes[i].Pos_Y += 1;
+
+        // saiu da tela sem ser coletado: remove
+        if (poderes[i].Pos_Y > 210) {
+            remover_poder(i, background_color);
+            continue;
+        }
+
+        // colidiu com o player: duplica bolas e remove poder
+        if ((poderes[i].Pos_Y + 7 >= Y_PLAYER) &&
+            (poderes[i].Pos_Y <= Y_PLAYER + ALTURA_PLAYER) &&
+            (poderes[i].Pos_X + 7 >= player_x) &&
+            (poderes[i].Pos_X <= player_x + LARGURA_PLAYER)) {
+            duplicar_bolas();
+            remover_poder(i, background_color);
+            continue;
+        }
+
+        // desenha sprite na nova posicao
+        draw_sprite(poderes[i].Pos_X, poderes[i].Pos_Y, (int **)sprite_poder, 8, 8);
+    }
+}
 
 // -------- FUNÇÕES DO CÓDIGO EXEMPLO-----------------
 
@@ -140,200 +262,168 @@ int main(void) {
     video_box(0, 0, STANDARD_X, STANDARD_Y, 0); // fundo preto
     video_box(10, 10, 310 - 1, 210 - 1, background_color);
     EstadoInicial();
-    
+
     // Inicializa player centralizado
     player_x = 135;
     video_box(player_x, Y_PLAYER, player_x + LARGURA_PLAYER - 1, Y_PLAYER + ALTURA_PLAYER - 1, resample_rgb(db, COR_PLAYER));
 
-    // Inicializa a fisica e posicao da bola acima do player caindo
-    bola.Pos_X = 155;
-    bola.Pos_Y = Y_PLAYER - 15;
-    bola.Type_mov = 0;
+    // Inicializa o array dinamico de bolas com uma unica bola acima do player caindo
+    inicializar_bolas();
 
     volatile int *KEY_ptr = (int *)KEY_BASE;
 
     // Loop principal do jogo
     while (1) {
-        int botoes = *KEY_ptr;  
+        int botoes = *KEY_ptr;
 
         // Apaga player só se vai mover
-        short novo_x = player_x;    
+        short novo_x = player_x;
 
         if (botoes & 0x1) {
             novo_x += VEL_PLAYER; // KEY0 = direita
         }
         if (botoes & 0x2) {
             novo_x -= VEL_PLAYER; // KEY1 = esquerda
-        }   
+        }
 
         if (novo_x < 10){
             novo_x = 10;
-        } 
+        }
         if (novo_x > 310 - LARGURA_PLAYER){
-            novo_x = 310 - LARGURA_PLAYER; 
-        }   
+            novo_x = 310 - LARGURA_PLAYER;
+        }
 
-        // Só redesenha se moveu 
+        // Só redesenha se moveu
         if (novo_x != player_x) {
             // Apaga só a fatia que ficou pra trás
             if (novo_x > player_x) {
                 // moveu direita: apaga a esquerda
                 video_box(player_x, Y_PLAYER, novo_x - 1, Y_PLAYER + ALTURA_PLAYER - 1, resample_rgb(db, BACKGROUND_BLUE));
-            } 
+            }
             else {
                 // moveu esquerda: apaga a direita
                 video_box(novo_x + LARGURA_PLAYER, Y_PLAYER, player_x + LARGURA_PLAYER - 1, Y_PLAYER + ALTURA_PLAYER - 1, resample_rgb(db, BACKGROUND_BLUE));
             }
             player_x = novo_x;
             video_box(player_x, Y_PLAYER, player_x + LARGURA_PLAYER - 1, Y_PLAYER + ALTURA_PLAYER - 1, resample_rgb(db, COR_PLAYER));
-        }   
-    
+        }
+        int b = 0;
+        // Loop sobre todas as bolas ativas
+        for (b = 0; b < num_bolas; b++) {
 
-        // Apaga a bola na posicao antiga (tamanho quadrado de 4x4 pixels)
-        video_box(bola.Pos_X, bola.Pos_Y, bola.Pos_X + 3, bola.Pos_Y + 3, resample_rgb(db, BACKGROUND_BLUE));
+            // Apaga a bola na posicao antiga (tamanho quadrado de 4x4 pixels)
+            video_box(bolas[b].Pos_X, bolas[b].Pos_Y, bolas[b].Pos_X + 3, bolas[b].Pos_Y + 3, resample_rgb(db, BACKGROUND_BLUE));
 
-        // Movimentacao da bola dependendo do estado atual do Type_mov
-        if (bola.Type_mov == 0) {
-            bola.Pos_Y += 1;
-        }
-        if (bola.Type_mov == 1) {
-            bola.Pos_Y -= 1;
-        }
-        if (bola.Type_mov == 2) {
-            bola.Pos_X -= 1;
-            bola.Pos_Y -= 1;
-        }
-        if (bola.Type_mov == 3) {
-            bola.Pos_X += 1;
-            bola.Pos_Y -= 1;
-        }
-        if (bola.Type_mov == 4) {
-            bola.Pos_X -= 1;
-            bola.Pos_Y += 1;
-        }
-        if (bola.Type_mov == 5) {
-            bola.Pos_X += 1;
-            bola.Pos_Y += 1;
-        }
+            // Movimentacao da bola dependendo do estado atual do Type_mov
+            if (bolas[b].Type_mov == 0) { bolas[b].Pos_Y += 1; }
+            if (bolas[b].Type_mov == 1) { bolas[b].Pos_Y -= 1; }
+            if (bolas[b].Type_mov == 2) { bolas[b].Pos_X -= 1; bolas[b].Pos_Y -= 1; }
+            if (bolas[b].Type_mov == 3) { bolas[b].Pos_X += 1; bolas[b].Pos_Y -= 1; }
+            if (bolas[b].Type_mov == 4) { bolas[b].Pos_X -= 1; bolas[b].Pos_Y += 1; }
+            if (bolas[b].Type_mov == 5) { bolas[b].Pos_X += 1; bolas[b].Pos_Y += 1; }
 
-        // Colisao simples com as paredes do cenario
-        if (bola.Pos_X < 10) {
-            bola.Pos_X = 10;
-            if (bola.Type_mov == 2) {
-                bola.Type_mov = 3;
+            // Colisao simples com as paredes do cenario
+            if (bolas[b].Pos_X < 10) {
+                bolas[b].Pos_X = 10;
+                if (bolas[b].Type_mov == 2) bolas[b].Type_mov = 3;
+                if (bolas[b].Type_mov == 4) bolas[b].Type_mov = 5;
             }
-            if (bola.Type_mov == 4) {
-                bola.Type_mov = 5;
+            if (bolas[b].Pos_X > 306) {
+                bolas[b].Pos_X = 306;
+                if (bolas[b].Type_mov == 3) bolas[b].Type_mov = 2;
+                if (bolas[b].Type_mov == 5) bolas[b].Type_mov = 4;
             }
-        }
-        if (bola.Pos_X > 306) {
-            bola.Pos_X = 306;
-            if (bola.Type_mov == 3) {
-                bola.Type_mov = 2;
+            if (bolas[b].Pos_Y < 10) {
+                bolas[b].Pos_Y = 10;
+                if (bolas[b].Type_mov == 1) bolas[b].Type_mov = 0;
+                if (bolas[b].Type_mov == 2) bolas[b].Type_mov = 4;
+                if (bolas[b].Type_mov == 3) bolas[b].Type_mov = 5;
             }
-            if (bola.Type_mov == 5) {
-                bola.Type_mov = 4;
-            }
-        }
-        if (bola.Pos_Y < 10) {
-            bola.Pos_Y = 10;
-            if (bola.Type_mov == 1) {
-                bola.Type_mov = 0;
-            }
-            if (bola.Type_mov == 2) {
-                bola.Type_mov = 4;
-            }
-            if (bola.Type_mov == 3) {
-                bola.Type_mov = 5;
-            }
-        }
-        // Se cair no fundo do mapa reinicia acima do player
-        if (bola.Pos_Y > 208) {
-            bola.Pos_X = player_x;
-            bola.Pos_Y = Y_PLAYER - 15;
-            bola.Type_mov = 0;
-        }
 
-        // Colisao com o player dividido em 3 partes (esquerda, meio, direita)
-        if ((bola.Pos_Y + 3 >= Y_PLAYER - 1) && (bola.Pos_Y <= Y_PLAYER + ALTURA_PLAYER - 1)) {
-            if ((bola.Pos_X + 3 >= player_x) && (bola.Pos_X <= player_x + LARGURA_PLAYER)) {
-                if (bola.Pos_X < player_x + 14) {
-                    bola.Type_mov = 2;
-                }
-                else if (bola.Pos_X <= player_x + 26) {
-                    bola.Type_mov = 1;
-                }
+            // Se cair no fundo do mapa remove a bola
+            if (bolas[b].Pos_Y > 205) {
+                // compacta o array removendo a bola b
+                int k = 0;
+                for (k = b; k < num_bolas - 1; k++){
+                    bolas[k] = bolas[k + 1];
+                }  
+                num_bolas--;
+                if (num_bolas > 0) {
+                    bolas = (Bola *)realloc(bolas, sizeof(Bola) * num_bolas);
+                } 
                 else {
-                    bola.Type_mov = 3;
+                    free(bolas);
+                    bolas = NULL;
+                    // Nenhuma bola restante: game over
+                    while(1);
                 }
+                b--; // corrige o indice apos remocao
+                continue;
             }
-        }
 
-        // Mapeamento matematico em Hash direto na matriz de blocos sem usar loops
-        short teste_x = bola.Pos_X;
-        short teste_y = bola.Pos_Y;
-
-        if (bola.Type_mov == 0) {
-            teste_x = bola.Pos_X + 1;
-            teste_y = bola.Pos_Y + 3;
-        }
-        if (bola.Type_mov == 1) {
-            teste_x = bola.Pos_X + 1;
-            teste_y = bola.Pos_Y;
-        }
-        if (bola.Type_mov == 2) {
-            teste_x = bola.Pos_X;
-            teste_y = bola.Pos_Y;
-        }
-        if (bola.Type_mov == 3) {
-            teste_x = bola.Pos_X + 3;
-            teste_y = bola.Pos_Y;
-        }
-        if (bola.Type_mov == 4) {
-            teste_x = bola.Pos_X;
-            teste_y = bola.Pos_Y + 3;
-        }
-        if (bola.Type_mov == 5) {
-            teste_x = bola.Pos_X + 3;
-            teste_y = bola.Pos_Y + 3;
-        }
-
-        int col_bloco = (teste_x - 10) / 30;
-        int row_bloco = (teste_y - 10) / 11;
-
-        if ((row_bloco >= 0) && (row_bloco < 5)) {
-            if ((col_bloco >= 0) && (col_bloco < 10)) {
-                if ((bola.Pos_X + 3 >= blocos[row_bloco][col_bloco].Pos_X) && (bola.Pos_X <= blocos[row_bloco][col_bloco].Pos_X + LARGURA_BLOCO) && (bola.Pos_Y + 3 >= blocos[row_bloco][col_bloco].Pos_Y) && (bola.Pos_Y <= blocos[row_bloco][col_bloco].Pos_Y + ALTURA_BLOCO) && (blocos[row_bloco][col_bloco].IsAlive == true)) {
-                    blocos[row_bloco][col_bloco].IsAlive = false;
-                    video_box(blocos[row_bloco][col_bloco].Pos_X, blocos[row_bloco][col_bloco].Pos_Y, blocos[row_bloco][col_bloco].Pos_X + LARGURA_BLOCO - 1, blocos[row_bloco][col_bloco].Pos_Y + ALTURA_BLOCO - 1, background_color);
-                    score+= 10;
-                    AtualizarScore();
-                    if (bola.Type_mov == 0) {
-                        bola.Type_mov = 1;
+            // Colisao com o player dividido em 3 partes (esquerda, meio, direita)
+            if ((bolas[b].Pos_Y + 3 >= Y_PLAYER - 1) && (bolas[b].Pos_Y <= Y_PLAYER + ALTURA_PLAYER - 1)) {
+                if ((bolas[b].Pos_X + 3 >= player_x) && (bolas[b].Pos_X <= player_x + LARGURA_PLAYER)) {
+                    if (bolas[b].Pos_X < player_x + 14) {
+                        bolas[b].Type_mov = 2;
                     }
-                    else if (bola.Type_mov == 1) {
-                        bola.Type_mov = 0;
+                    else if (bolas[b].Pos_X <= player_x + 26) {
+                        bolas[b].Type_mov = 1;
                     }
-                    else if (bola.Type_mov == 2) {
-                        bola.Type_mov = 4;
-                    }
-                    else if (bola.Type_mov == 3) {
-                        bola.Type_mov = 5;
-                    }
-                    else if (bola.Type_mov == 4) {
-                        bola.Type_mov = 2;
-                    }
-                    else if (bola.Type_mov == 5) {
-                        bola.Type_mov = 3;
+                    else {
+                        bolas[b].Type_mov = 3;
                     }
                 }
             }
+
+            // Mapeamento matematico em Hash direto na matriz de blocos sem usar loops
+            short teste_x = bolas[b].Pos_X;
+            short teste_y = bolas[b].Pos_Y;
+
+            if (bolas[b].Type_mov == 0) { teste_x = bolas[b].Pos_X + 1; teste_y = bolas[b].Pos_Y + 3; }
+            if (bolas[b].Type_mov == 1) { teste_x = bolas[b].Pos_X + 1; teste_y = bolas[b].Pos_Y;     }
+            if (bolas[b].Type_mov == 2) { teste_x = bolas[b].Pos_X;     teste_y = bolas[b].Pos_Y;     }
+            if (bolas[b].Type_mov == 3) { teste_x = bolas[b].Pos_X + 3; teste_y = bolas[b].Pos_Y;     }
+            if (bolas[b].Type_mov == 4) { teste_x = bolas[b].Pos_X;     teste_y = bolas[b].Pos_Y + 3; }
+            if (bolas[b].Type_mov == 5) { teste_x = bolas[b].Pos_X + 3; teste_y = bolas[b].Pos_Y + 3; }
+
+            int col_bloco = (teste_x - 10) / 30;
+            int row_bloco = (teste_y - 10) / 11;
+
+            if ((row_bloco >= 0) && (row_bloco < 5)) {
+                if ((col_bloco >= 0) && (col_bloco < 10)) {
+                    if ((bolas[b].Pos_X + 3 >= blocos[row_bloco][col_bloco].Pos_X) && (bolas[b].Pos_X <= blocos[row_bloco][col_bloco].Pos_X + LARGURA_BLOCO) && (bolas[b].Pos_Y + 3 >= blocos[row_bloco][col_bloco].Pos_Y) && (bolas[b].Pos_Y <= blocos[row_bloco][col_bloco].Pos_Y + ALTURA_BLOCO) && (blocos[row_bloco][col_bloco].IsAlive == true)) {
+                        blocos[row_bloco][col_bloco].IsAlive = false;
+                        video_box(blocos[row_bloco][col_bloco].Pos_X, blocos[row_bloco][col_bloco].Pos_Y, blocos[row_bloco][col_bloco].Pos_X + LARGURA_BLOCO - 1, blocos[row_bloco][col_bloco].Pos_Y + ALTURA_BLOCO - 1, background_color);
+                        score += 10;
+                        AtualizarScore();
+
+                        // Verifica se o bloco destruido e um dos especiais e solta poder
+                        if ((row_bloco == BLOCO_ESPECIAL_1_ROW && col_bloco == BLOCO_ESPECIAL_1_COL) ||
+                            (row_bloco == BLOCO_ESPECIAL_2_ROW && col_bloco == BLOCO_ESPECIAL_2_COL)) {
+                            adicionar_poder(blocos[row_bloco][col_bloco].Pos_X + LARGURA_BLOCO / 2,
+                                            blocos[row_bloco][col_bloco].Pos_Y);
+                        }
+
+                        // Rebate a bola ao destruir bloco
+                        if      (bolas[b].Type_mov == 0) bolas[b].Type_mov = 1;
+                        else if (bolas[b].Type_mov == 1) bolas[b].Type_mov = 0;
+                        else if (bolas[b].Type_mov == 2) bolas[b].Type_mov = 4;
+                        else if (bolas[b].Type_mov == 3) bolas[b].Type_mov = 5;
+                        else if (bolas[b].Type_mov == 4) bolas[b].Type_mov = 2;
+                        else if (bolas[b].Type_mov == 5) bolas[b].Type_mov = 3;
+                    }
+                }
+            }
+
+            // Desenha a bola na nova posicao
+            video_box(bolas[b].Pos_X, bolas[b].Pos_Y, bolas[b].Pos_X + 3, bolas[b].Pos_Y + 3, resample_rgb(db, COR_PLAYER));
         }
 
-        // Desenha a bola na nova posicao corrigida
-        video_box(bola.Pos_X, bola.Pos_Y, bola.Pos_X + 3, bola.Pos_Y + 3, resample_rgb(db, COR_PLAYER));
+        // Atualiza todos os poderes (movimento, colisao com player, saida de tela)
+        atualizar_poderes(background_color);
 
-        delay(50000); // delay para controlar a velocidade do jogo   
+        delay(50000); // delay para controlar a velocidade do jogo
     }
 }
 
@@ -377,6 +467,27 @@ void video_box(int x1, int y1, int x2, int y2, short pixel_color) {
                         (row << (10 - res_offset - col_offset)) + (col << 1);
             *(short *)pixel_ptr = pixel_color; // set pixel color
         }
+}
+
+//Desenha um único pixel na tela
+void draw_pixel(int x, int y, short color) {
+    int pixel_buf_ptr = *(int *)PIXEL_BUF_CTRL_BASE;
+    int x_factor = 0x1 << (res_offset + col_offset);
+    int y_factor = 0x1 << res_offset;
+    x = x / x_factor;
+    y = y / y_factor;
+    int pixel_ptr = pixel_buf_ptr + (y << (10 - res_offset - col_offset)) + (x << 1);
+    *(short *)pixel_ptr = color;
+}
+
+//Desenha um sprite a partir de chamadas sucessivas do pixel
+void draw_sprite(int x, int y, int **sprite, int w, int h) {
+    int i = 0;
+    int j = 0;
+    for (i = 0; i < h; i++)
+        for (j = 0; j < w; j++)
+            if (sprite[i][j] != -1)
+                draw_pixel(x + j, y + i, resample_rgb(db, sprite[i][j]));
 }
 
 /*******************************************************************************
