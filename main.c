@@ -347,6 +347,37 @@ void TelaInicial(){
         }
     }
 }
+/*
+Mata as bolas anteriores e os poderes, seta uma bola na posição original
+seta o jogador no centro 
+*/
+void Reset(short *novo_x){
+    score = 0;
+    AtualizarScore();
+
+    video_box(10, 10, 309, 209, resample_rgb(db, BACKGROUND_BLUE));
+
+    player_x = 135;
+    LARGURA_PLAYER = LARGURA_PLAYER_BASE;
+
+    contador_expansao = 0;
+    contador_relogio = 0;
+
+    if (bolas) free(bolas);
+    bolas = NULL;
+
+    if (poderes) free(poderes);
+    poderes = NULL;
+    num_poderes = 0;
+
+    EstadoInicial();
+    inicializar_bolas();
+    
+    novo_x = player_x;
+
+    video_box(player_x, Y_PLAYER, player_x + LARGURA_PLAYER - 1,
+              Y_PLAYER + ALTURA_PLAYER - 1, resample_rgb(db, COR_PLAYER));
+}
 
 // -------- FUNÇÕES DO CÓDIGO EXEMPLO-----------------
 
@@ -417,11 +448,7 @@ int main(void) {
 
         //RESET
         if(botoes & 0x04) {
-            score =0;
-            video_box(novo_x + LARGURA_PLAYER, Y_PLAYER, player_x + LARGURA_PLAYER - 1, Y_PLAYER + ALTURA_PLAYER - 1, resample_rgb(db, BACKGROUND_BLUE));
-            player_x = 135;
-            video_box(player_x, Y_PLAYER, player_x + LARGURA_PLAYER - 1, Y_PLAYER + ALTURA_PLAYER - 1, resample_rgb(db, COR_PLAYER));
-            EstadoInicial();
+            Reset(&novo_x);
         }
 
         if (novo_x < 10){
