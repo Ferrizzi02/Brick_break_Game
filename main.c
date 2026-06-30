@@ -27,13 +27,22 @@ int db;
 #define LARGURA_BLOCO 29
 #define ALTURA_BLOCO 10
 
-#define LARGURA_PLAYER 40
+#define LARGURA_PLAYER_BASE 40
+#define LARGURA_PLAYER_EXPANDIDA 55
+#define LARGURA_PLAYER_REDUZIDA 30
 #define ALTURA_PLAYER  8
 #define Y_PLAYER       195
 #define VEL_PLAYER     2
 #define COR_PLAYER     0xFFFFFF
+#define DURACAO_EXPANSAO 200
+#define DURACAO_RELOGIO 200  // mesmo periodo do contador dos outros poderes
+#define MULTIPLICADOR_DELAY_RELOGIO 2 // 2x o delay normal = jogo mais devagar
 
 short player_x;
+short LARGURA_PLAYER = LARGURA_PLAYER_BASE;
+int contador_expansao = 0;
+short tipo_efeito_player = 0; // 1 = expandido, 2 = reduzido
+int contador_relogio = 0; // contador proprio do poder relogio (independente do contador_expansao)
 
 typedef struct {
     short Type;
@@ -56,6 +65,7 @@ typedef struct {
     short Pos_X;
     short Pos_Y;
     bool  Ativo;
+    short Type; // 0 = duplicar bola, 1 = aumentar player, 2 = diminuir player, 3 = relogio (deixa o jogo mais devagar)
 } Poder;
 
 typedef struct {
@@ -72,11 +82,14 @@ int num_bolas = 0;
 Poder *poderes = NULL;
 int num_poderes = 0;
 
-// Posicoes hardcoded dos blocos especiais (row, col)
-#define BLOCO_ESPECIAL_1_ROW 2
-#define BLOCO_ESPECIAL_1_COL 4
-#define BLOCO_ESPECIAL_2_ROW 2
-#define BLOCO_ESPECIAL_2_COL 5
+// Type do bloco indica qual poder ele solta ao ser destruido:
+// 0 = bloco normal (nenhum poder), 1 = duplicar bola, 2 = aumentar player,
+// 3 = diminuir player, 4 = relogio (deixa o jogo mais devagar)
+#define BLOCO_TIPO_NORMAL          0
+#define BLOCO_TIPO_DUPLICAR_BOLA   1
+#define BLOCO_TIPO_AUMENTAR_PLAYER 2
+#define BLOCO_TIPO_DIMINUIR_PLAYER 3
+#define BLOCO_TIPO_RELOGIO         4
 
 // Sprite do poder (duplicar bola) - exportado do Piskel
 // 0xff000000 = preto, 0xffff0000 = vermelho
@@ -89,6 +102,45 @@ static int sprite_poder[8][8] = {
     { 0xffff0000, 0xff000000, 0xff000000, 0xff000000, 0xffff0000, 0xff000000, 0xffff0000, 0xff000000 },
     { 0xffff0000, 0xffff0000, 0xffff0000, 0xffff0000, 0xffff0000, 0xffff0000, 0xffff0000, 0xffff0000 },
     { 0xffff0000, 0xffff0000, 0xffff0000, 0xffff0000, 0xffff0000, 0xffff0000, 0xffff0000, 0xffff0000 }
+};
+
+// Sprite do poder (aumentar largura do player) - exportado do Piskel
+// 0xff0000ff = azul, 0xff010000 = quase-preto
+static int sprite_poder_largura[8][8] = {
+    { 0xff0000ff, 0xff0000ff, 0xff0000ff, 0xff0000ff, 0xff0000ff, 0xff0000ff, 0xff0000ff, 0xff0000ff },
+    { 0xff0000ff, 0xff0000ff, 0xff010000, 0xff0000ff, 0xff0000ff, 0xff010000, 0xff0000ff, 0xff0000ff },
+    { 0xff0000ff, 0xff010000, 0xff010000, 0xff0000ff, 0xff0000ff, 0xff010000, 0xff010000, 0xff0000ff },
+    { 0xff010000, 0xff010000, 0xff010000, 0xff010000, 0xff010000, 0xff010000, 0xff010000, 0xff010000 },
+    { 0xff0000ff, 0xff010000, 0xff010000, 0xff0000ff, 0xff0000ff, 0xff010000, 0xff010000, 0xff0000ff },
+    { 0xff0000ff, 0xff0000ff, 0xff010000, 0xff0000ff, 0xff0000ff, 0xff010000, 0xff0000ff, 0xff0000ff },
+    { 0xff0000ff, 0xff0000ff, 0xff0000ff, 0xff0000ff, 0xff0000ff, 0xff0000ff, 0xff0000ff, 0xff0000ff },
+    { 0xff0000ff, 0xff0000ff, 0xff0000ff, 0xff0000ff, 0xff0000ff, 0xff0000ff, 0xff0000ff, 0xff0000ff }
+};
+
+// Sprite do poder (diminuir largura do player) - exportado do Piskel
+// 0xff0000ff = azul, 0xff010000 = quase-preto
+static int sprite_poder_reduzir[8][8] = {
+    { 0xff0000ff, 0xff0000ff, 0xff0000ff, 0xff0000ff, 0xff0000ff, 0xff0000ff, 0xff0000ff, 0xff0000ff },
+    { 0xff010000, 0xff0000ff, 0xff0000ff, 0xff0000ff, 0xff0000ff, 0xff0000ff, 0xff0000ff, 0xff010000 },
+    { 0xff010000, 0xff010000, 0xff0000ff, 0xff0000ff, 0xff0000ff, 0xff0000ff, 0xff010000, 0xff010000 },
+    { 0xff010000, 0xff010000, 0xff010000, 0xff0000ff, 0xff0000ff, 0xff010000, 0xff010000, 0xff010000 },
+    { 0xff010000, 0xff010000, 0xff0000ff, 0xff0000ff, 0xff0000ff, 0xff0000ff, 0xff010000, 0xff010000 },
+    { 0xff010000, 0xff0000ff, 0xff0000ff, 0xff0000ff, 0xff0000ff, 0xff0000ff, 0xff0000ff, 0xff010000 },
+    { 0xff0000ff, 0xff0000ff, 0xff0000ff, 0xff0000ff, 0xff0000ff, 0xff0000ff, 0xff0000ff, 0xff0000ff },
+    { 0xff0000ff, 0xff0000ff, 0xff0000ff, 0xff0000ff, 0xff0000ff, 0xff0000ff, 0xff0000ff, 0xff0000ff }
+};
+
+// Sprite do poder (relogio - deixa o jogo mais devagar) - exportado do Piskel
+// 0xff010000 = quase-preto, 0xffffffff = branco, -1 = transparente (cantos, alpha 0 no Piskel)
+static int sprite_poder_relogio[8][8] = {
+    { -1,         -1,         0xff010000, 0xff010000, 0xff010000, 0xff010000, -1,         -1         },
+    { -1,         0xff010000, 0xffffffff, 0xffffffff, 0xffffffff, 0xffffffff, 0xff010000, -1         },
+    { 0xff010000, 0xffffffff, 0xffffffff, 0xffffffff, 0xff010000, 0xffffffff, 0xffffffff, 0xff010000 },
+    { 0xff010000, 0xffffffff, 0xffffffff, 0xffffffff, 0xff010000, 0xffffffff, 0xffffffff, 0xff010000 },
+    { 0xff010000, 0xffffffff, 0xffffffff, 0xff010000, 0xff010000, 0xffffffff, 0xffffffff, 0xff010000 },
+    { 0xff010000, 0xffffffff, 0xffffffff, 0xffffffff, 0xffffffff, 0xffffffff, 0xffffffff, 0xff010000 },
+    { -1,         0xff010000, 0xffffffff, 0xffffffff, 0xffffffff, 0xffffffff, 0xff010000, -1         },
+    { -1,         -1,         0xff010000, 0xff010000, 0xff010000, 0xff010000, -1,         -1         }
 };
 
 // Do stackoverflow.
@@ -117,6 +169,12 @@ void EstadoInicial(){
             video_box(blocos[i][j].Pos_X, blocos[i][j].Pos_Y, blocos[i][j].Pos_X + LARGURA_BLOCO - 1, blocos[i][j].Pos_Y + ALTURA_BLOCO - 1, cor_Fundo);
         }
     }
+
+    // Marca os blocos especiais que soltam poder ao serem destruidos
+    blocos[2][4].Type = BLOCO_TIPO_DUPLICAR_BOLA;
+    blocos[2][5].Type = BLOCO_TIPO_AUMENTAR_PLAYER;
+    blocos[2][6].Type = BLOCO_TIPO_DIMINUIR_PLAYER;
+    blocos[2][7].Type = BLOCO_TIPO_RELOGIO;
 }
 
 int score = 0;
@@ -132,6 +190,7 @@ void AtualizarScore(){
     video_text(20, 55, texto);
 }
 
+//Aplica um delay, para melhor jogatina
 void delay(int delay){
     volatile int i = 0;
     for(i = 0; i < delay; i++);
@@ -141,17 +200,25 @@ void delay(int delay){
 void inicializar_bolas() {
     num_bolas = 1;
     bolas = (Bola *)malloc(sizeof(Bola));
-    bolas[0].Pos_X    = 155;
-    bolas[0].Pos_Y    = Y_PLAYER - 15;
+    bolas[0].Pos_X = 155;
+    bolas[0].Pos_Y = Y_PLAYER - 15;
     bolas[0].Type_mov = 0;
 }
 
-// Retorna o tipo de movimento espelhado horizontalmente
+// Retorna o tipo de movimento espelhado horizontalmente, para em caso de duplicação da bola, ter 2 bolas em direções espelhadas
 short espelho_horizontal(short tipo) {
-    if (tipo == 2) return 3;
-    if (tipo == 3) return 2;
-    if (tipo == 4) return 5;
-    if (tipo == 5) return 4;
+    if (tipo == 2){ 
+        return 3; 
+    }
+    if (tipo == 3){ 
+        return 2; 
+    }
+    if (tipo == 4){ 
+        return 5; 
+    }
+    if (tipo == 5){ 
+        return 4; 
+    }
     return tipo; // 0 e 1 nao mudam (movimento vertical puro)
 }
 
@@ -168,12 +235,13 @@ void duplicar_bolas() {
 }
 
 // Adiciona um novo poder ao array dinamico na posicao indicada
-void adicionar_poder(short x, short y) {
+void adicionar_poder(short x, short y, short tipo) {
     num_poderes++;
     poderes = (Poder *)realloc(poderes, sizeof(Poder) * num_poderes);
     poderes[num_poderes - 1].Pos_X = x;
     poderes[num_poderes - 1].Pos_Y = y;
     poderes[num_poderes - 1].Ativo = true;
+    poderes[num_poderes - 1].Type  = tipo;
 }
 
 // Remove um poder do array compactando os elementos restantes
@@ -184,11 +252,13 @@ void remover_poder(int idx, short background_color) {
               background_color);
     // compacta o array removendo o elemento idx
     int i = 0;
-    for (i = idx; i < num_poderes - 1; i++)
+    for (i = idx; i < num_poderes - 1; i++) {
         poderes[i] = poderes[i + 1];
+    }
     num_poderes--;
-    if (num_poderes > 0)
+    if (num_poderes > 0) {
         poderes = (Poder *)realloc(poderes, sizeof(Poder) * num_poderes);
+    }
     else {
         free(poderes);
         poderes = NULL;
@@ -213,18 +283,49 @@ void atualizar_poderes(short background_color) {
             continue;
         }
 
-        // colidiu com o player: duplica bolas e remove poder
+        // colidiu com o player: aplica efeito do poder e remove
         if ((poderes[i].Pos_Y + 7 >= Y_PLAYER) &&
             (poderes[i].Pos_Y <= Y_PLAYER + ALTURA_PLAYER) &&
             (poderes[i].Pos_X + 7 >= player_x) &&
             (poderes[i].Pos_X <= player_x + LARGURA_PLAYER)) {
-            duplicar_bolas();
+            if (poderes[i].Type == 0) {
+                duplicar_bolas();
+            }
+            if (poderes[i].Type == 1) {
+                LARGURA_PLAYER = LARGURA_PLAYER_EXPANDIDA;
+                contador_expansao = DURACAO_EXPANSAO;
+                tipo_efeito_player = 1;
+                video_box(player_x, Y_PLAYER, player_x + LARGURA_PLAYER - 1, Y_PLAYER + ALTURA_PLAYER - 1, resample_rgb(db, COR_PLAYER));
+            }
+            if (poderes[i].Type == 2) {
+                // apaga o player no tamanho atual antes de reduzir
+                video_box(player_x, Y_PLAYER, player_x + LARGURA_PLAYER - 1, Y_PLAYER + ALTURA_PLAYER - 1, background_color);
+                LARGURA_PLAYER = LARGURA_PLAYER_REDUZIDA;
+                contador_expansao = DURACAO_EXPANSAO;
+                tipo_efeito_player = 2;
+                video_box(player_x, Y_PLAYER, player_x + LARGURA_PLAYER - 1, Y_PLAYER + ALTURA_PLAYER - 1, resample_rgb(db, COR_PLAYER));
+            }
+            if (poderes[i].Type == 3) {
+                // ativa o relogio com seu proprio contador, independente do contador_expansao
+                contador_relogio = DURACAO_RELOGIO;
+            }
             remover_poder(i, background_color);
             continue;
         }
 
-        // desenha sprite na nova posicao
-        draw_sprite(poderes[i].Pos_X, poderes[i].Pos_Y, (int **)sprite_poder, 8, 8);
+        // desenha sprite na nova posicao, de acordo com o Type
+        if (poderes[i].Type == 0) {
+            draw_sprite(poderes[i].Pos_X, poderes[i].Pos_Y, sprite_poder, 8, 8);
+        }
+        if (poderes[i].Type == 1) {
+            draw_sprite(poderes[i].Pos_X, poderes[i].Pos_Y, sprite_poder_largura, 8, 8);
+        }
+        if (poderes[i].Type == 2) {
+            draw_sprite(poderes[i].Pos_X, poderes[i].Pos_Y, sprite_poder_reduzir, 8, 8);
+        }
+        if (poderes[i].Type == 3) {
+            draw_sprite(poderes[i].Pos_X, poderes[i].Pos_Y, sprite_poder_relogio, 8, 8);
+        }
     }
 }
 
@@ -315,38 +416,64 @@ int main(void) {
             video_box(bolas[b].Pos_X, bolas[b].Pos_Y, bolas[b].Pos_X + 3, bolas[b].Pos_Y + 3, resample_rgb(db, BACKGROUND_BLUE));
 
             // Movimentacao da bola dependendo do estado atual do Type_mov
-            if (bolas[b].Type_mov == 0) { bolas[b].Pos_Y += 1; }
-            if (bolas[b].Type_mov == 1) { bolas[b].Pos_Y -= 1; }
-            if (bolas[b].Type_mov == 2) { bolas[b].Pos_X -= 1; bolas[b].Pos_Y -= 1; }
-            if (bolas[b].Type_mov == 3) { bolas[b].Pos_X += 1; bolas[b].Pos_Y -= 1; }
-            if (bolas[b].Type_mov == 4) { bolas[b].Pos_X -= 1; bolas[b].Pos_Y += 1; }
-            if (bolas[b].Type_mov == 5) { bolas[b].Pos_X += 1; bolas[b].Pos_Y += 1; }
+            if (bolas[b].Type_mov == 0){ 
+                bolas[b].Pos_Y += 1; 
+            }
+            if (bolas[b].Type_mov == 1){ 
+                bolas[b].Pos_Y -= 1; 
+            }
+            if (bolas[b].Type_mov == 2){ 
+                bolas[b].Pos_X -= 1; 
+                bolas[b].Pos_Y -= 1; 
+            }
+            if (bolas[b].Type_mov == 3){ 
+                bolas[b].Pos_X += 1; 
+                bolas[b].Pos_Y -= 1; 
+            }
+            if (bolas[b].Type_mov == 4){ 
+                bolas[b].Pos_X -= 1; 
+                bolas[b].Pos_Y += 1; 
+            }
+            if (bolas[b].Type_mov == 5){ 
+                bolas[b].Pos_X += 1; 
+                bolas[b].Pos_Y += 1; 
+            }
 
             // Colisao simples com as paredes do cenario
             if (bolas[b].Pos_X < 10) {
                 bolas[b].Pos_X = 10;
-                if (bolas[b].Type_mov == 2) bolas[b].Type_mov = 3;
-                if (bolas[b].Type_mov == 4) bolas[b].Type_mov = 5;
+                if (bolas[b].Type_mov == 2) { bolas[b].Type_mov = 3; }
+                if (bolas[b].Type_mov == 4) { bolas[b].Type_mov = 5; }
             }
-            if (bolas[b].Pos_X > 306) {
+            if (bolas[b].Pos_X > 306){
                 bolas[b].Pos_X = 306;
-                if (bolas[b].Type_mov == 3) bolas[b].Type_mov = 2;
-                if (bolas[b].Type_mov == 5) bolas[b].Type_mov = 4;
+                if (bolas[b].Type_mov == 3){ 
+                    bolas[b].Type_mov = 2; 
+                }
+                if (bolas[b].Type_mov == 5){ 
+                    bolas[b].Type_mov = 4; 
+                }
             }
-            if (bolas[b].Pos_Y < 10) {
+            if (bolas[b].Pos_Y < 10){
                 bolas[b].Pos_Y = 10;
-                if (bolas[b].Type_mov == 1) bolas[b].Type_mov = 0;
-                if (bolas[b].Type_mov == 2) bolas[b].Type_mov = 4;
-                if (bolas[b].Type_mov == 3) bolas[b].Type_mov = 5;
+                if (bolas[b].Type_mov == 1){ 
+                    bolas[b].Type_mov = 0; 
+                }
+                if (bolas[b].Type_mov == 2){ 
+                    bolas[b].Type_mov = 4; 
+                }
+                if (bolas[b].Type_mov == 3){ 
+                    bolas[b].Type_mov = 5; 
+                }
             }
 
             // Se cair no fundo do mapa remove a bola
             if (bolas[b].Pos_Y > 205) {
                 // compacta o array removendo a bola b
                 int k = 0;
-                for (k = b; k < num_bolas - 1; k++){
+                for (k = b; k < num_bolas - 1; k++) {
                     bolas[k] = bolas[k + 1];
-                }  
+                }
                 num_bolas--;
                 if (num_bolas > 0) {
                     bolas = (Bola *)realloc(bolas, sizeof(Bola) * num_bolas);
@@ -380,12 +507,30 @@ int main(void) {
             short teste_x = bolas[b].Pos_X;
             short teste_y = bolas[b].Pos_Y;
 
-            if (bolas[b].Type_mov == 0) { teste_x = bolas[b].Pos_X + 1; teste_y = bolas[b].Pos_Y + 3; }
-            if (bolas[b].Type_mov == 1) { teste_x = bolas[b].Pos_X + 1; teste_y = bolas[b].Pos_Y;     }
-            if (bolas[b].Type_mov == 2) { teste_x = bolas[b].Pos_X;     teste_y = bolas[b].Pos_Y;     }
-            if (bolas[b].Type_mov == 3) { teste_x = bolas[b].Pos_X + 3; teste_y = bolas[b].Pos_Y;     }
-            if (bolas[b].Type_mov == 4) { teste_x = bolas[b].Pos_X;     teste_y = bolas[b].Pos_Y + 3; }
-            if (bolas[b].Type_mov == 5) { teste_x = bolas[b].Pos_X + 3; teste_y = bolas[b].Pos_Y + 3; }
+            if (bolas[b].Type_mov == 0){ 
+                teste_x = bolas[b].Pos_X + 1; 
+                teste_y = bolas[b].Pos_Y + 3; 
+            }
+            if (bolas[b].Type_mov == 1){ 
+                teste_x = bolas[b].Pos_X + 1; 
+                teste_y = bolas[b].Pos_Y;     
+            }
+            if (bolas[b].Type_mov == 2){ 
+                teste_x = bolas[b].Pos_X;     
+                teste_y = bolas[b].Pos_Y;     
+            }
+            if (bolas[b].Type_mov == 3){ 
+                teste_x = bolas[b].Pos_X + 3; 
+                teste_y = bolas[b].Pos_Y;     
+            }
+            if (bolas[b].Type_mov == 4){ 
+                teste_x = bolas[b].Pos_X;     
+                teste_y = bolas[b].Pos_Y + 3; 
+            }
+            if (bolas[b].Type_mov == 5){ 
+                teste_x = bolas[b].Pos_X + 3; 
+                teste_y = bolas[b].Pos_Y + 3; 
+            }
 
             int col_bloco = (teste_x - 10) / 30;
             int row_bloco = (teste_y - 10) / 11;
@@ -398,20 +543,43 @@ int main(void) {
                         score += 10;
                         AtualizarScore();
 
-                        // Verifica se o bloco destruido e um dos especiais e solta poder
-                        if ((row_bloco == BLOCO_ESPECIAL_1_ROW && col_bloco == BLOCO_ESPECIAL_1_COL) ||
-                            (row_bloco == BLOCO_ESPECIAL_2_ROW && col_bloco == BLOCO_ESPECIAL_2_COL)) {
+                        // Verifica se o bloco destruido solta poder, de acordo com o seu Type
+                        if (blocos[row_bloco][col_bloco].Type == BLOCO_TIPO_DUPLICAR_BOLA) {
                             adicionar_poder(blocos[row_bloco][col_bloco].Pos_X + LARGURA_BLOCO / 2,
-                                            blocos[row_bloco][col_bloco].Pos_Y);
+                                            blocos[row_bloco][col_bloco].Pos_Y, 0);
+                        }
+                        if (blocos[row_bloco][col_bloco].Type == BLOCO_TIPO_AUMENTAR_PLAYER) {
+                            adicionar_poder(blocos[row_bloco][col_bloco].Pos_X + LARGURA_BLOCO / 2,
+                                            blocos[row_bloco][col_bloco].Pos_Y, 1);
+                        }
+                        if (blocos[row_bloco][col_bloco].Type == BLOCO_TIPO_DIMINUIR_PLAYER) {
+                            adicionar_poder(blocos[row_bloco][col_bloco].Pos_X + LARGURA_BLOCO / 2,
+                                            blocos[row_bloco][col_bloco].Pos_Y, 2);
+                        }
+                        if (blocos[row_bloco][col_bloco].Type == BLOCO_TIPO_RELOGIO) {
+                            adicionar_poder(blocos[row_bloco][col_bloco].Pos_X + LARGURA_BLOCO / 2,
+                                            blocos[row_bloco][col_bloco].Pos_Y, 3);
                         }
 
                         // Rebate a bola ao destruir bloco
-                        if      (bolas[b].Type_mov == 0) bolas[b].Type_mov = 1;
-                        else if (bolas[b].Type_mov == 1) bolas[b].Type_mov = 0;
-                        else if (bolas[b].Type_mov == 2) bolas[b].Type_mov = 4;
-                        else if (bolas[b].Type_mov == 3) bolas[b].Type_mov = 5;
-                        else if (bolas[b].Type_mov == 4) bolas[b].Type_mov = 2;
-                        else if (bolas[b].Type_mov == 5) bolas[b].Type_mov = 3;
+                        if (bolas[b].Type_mov == 0){ 
+                            bolas[b].Type_mov = 1; 
+                        }
+                        else if (bolas[b].Type_mov == 1){ 
+                            bolas[b].Type_mov = 0; 
+                        }
+                        else if (bolas[b].Type_mov == 2){ 
+                            bolas[b].Type_mov = 4; 
+                        }
+                        else if (bolas[b].Type_mov == 3){ 
+                            bolas[b].Type_mov = 5; 
+                        }
+                        else if (bolas[b].Type_mov == 4){ 
+                            bolas[b].Type_mov = 2; 
+                        }
+                        else if (bolas[b].Type_mov == 5){ 
+                            bolas[b].Type_mov = 3; 
+                        }
                     }
                 }
             }
@@ -419,11 +587,35 @@ int main(void) {
             // Desenha a bola na nova posicao
             video_box(bolas[b].Pos_X, bolas[b].Pos_Y, bolas[b].Pos_X + 3, bolas[b].Pos_Y + 3, resample_rgb(db, COR_PLAYER));
         }
-
         // Atualiza todos os poderes (movimento, colisao com player, saida de tela)
         atualizar_poderes(background_color);
+        // Controla a duracao do efeito ativo na largura do player (expandido ou reduzido)
+        if (contador_expansao > 0){
+            contador_expansao--;
+            if (contador_expansao == 0){
+                // apaga o player no tamanho atual e redesenha no tamanho normal
+                video_box(player_x, Y_PLAYER, player_x + LARGURA_PLAYER - 1, Y_PLAYER + ALTURA_PLAYER - 1, resample_rgb(db, BACKGROUND_BLUE));
+                LARGURA_PLAYER = LARGURA_PLAYER_BASE;
+                tipo_efeito_player = 0;
+                if (player_x > 310 - LARGURA_PLAYER) {
+                    player_x = 310 - LARGURA_PLAYER;
+                }
+                video_box(player_x, Y_PLAYER, player_x + LARGURA_PLAYER - 1, Y_PLAYER + ALTURA_PLAYER - 1, resample_rgb(db, COR_PLAYER));
+            }
+        }
 
-        delay(50000); // delay para controlar a velocidade do jogo
+        // Controla a duracao do efeito do relogio (contador proprio, independente do contador_expansao)
+        if (contador_relogio > 0) {
+            contador_relogio--;
+        }
+
+        // Se o relogio estiver ativo, multiplica o delay para deixar o jogo mais devagar
+        if (contador_relogio > 0) {
+            delay(50000 * MULTIPLICADOR_DELAY_RELOGIO);
+        }
+        else {
+            delay(50000); // delay para controlar a velocidade do jogo
+        }
     }
 }
 
@@ -461,12 +653,13 @@ void video_box(int x1, int y1, int x2, int y2, short pixel_color) {
     y2           = y2 / y_factor;
 
     /* assume that the box coordinates are valid */
-    for (row = y1; row <= y2; row++)
+    for (row = y1; row <= y2; row++) {
         for (col = x1; col <= x2; ++col) {
             pixel_ptr = pixel_buf_ptr +
                         (row << (10 - res_offset - col_offset)) + (col << 1);
             *(short *)pixel_ptr = pixel_color; // set pixel color
         }
+    }
 }
 
 //Desenha um único pixel na tela
@@ -481,13 +674,16 @@ void draw_pixel(int x, int y, short color) {
 }
 
 //Desenha um sprite a partir de chamadas sucessivas do pixel
-void draw_sprite(int x, int y, int **sprite, int w, int h) {
+void draw_sprite(int x, int y, int sprite[][8], int w, int h) {
     int i = 0;
     int j = 0;
-    for (i = 0; i < h; i++)
-        for (j = 0; j < w; j++)
-            if (sprite[i][j] != -1)
+    for (i = 0; i < h; i++) {
+        for (j = 0; j < w; j++) {
+            if (sprite[i][j] != -1) {
                 draw_pixel(x + j, y + i, resample_rgb(db, sprite[i][j]));
+            }
+        }
+    }
 }
 
 /*******************************************************************************
