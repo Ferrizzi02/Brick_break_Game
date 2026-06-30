@@ -1,6 +1,7 @@
 #include "address_map_arm.h"
 #include <stdbool.h>
 #include <stdlib.h>
+#include "sprites.h"
 
 // -------- FUNÇÕES DO CÓDIGO EXEMPLO-----------------
 
@@ -142,6 +143,8 @@ static int sprite_poder_relogio[8][8] = {
     { -1,         0xff010000, 0xffffffff, 0xffffffff, 0xffffffff, 0xffffffff, 0xff010000, -1         },
     { -1,         -1,         0xff010000, 0xff010000, 0xff010000, 0xff010000, -1,         -1         }
 };
+
+
 
 // Do stackoverflow.
 // Muda dinâmicamente a cor do bloco dependendo da fila
@@ -372,6 +375,10 @@ int main(void) {
     inicializar_bolas();
 
     volatile int *KEY_ptr = (int *)KEY_BASE;
+
+    while(1){
+        draw_background(0, 0, palmeiras, 320, 240);
+    }
 
     // Loop principal do jogo
     while (1) {
@@ -671,6 +678,19 @@ void draw_pixel(int x, int y, short color) {
     y = y / y_factor;
     int pixel_ptr = pixel_buf_ptr + (y << (10 - res_offset - col_offset)) + (x << 1);
     *(short *)pixel_ptr = color;
+}
+
+//Desenha um sprite a partir de chamadas sucessivas do pixel
+void draw_background(int x, int y, int sprite[][320], int w, int h) {
+    int i = 0;
+    int j = 0;
+    for (i = 0; i < h; i++) {
+        for (j = 0; j < w; j++) {
+            if (sprite[i][j] != -1) {
+                draw_pixel(x + j, y + i, resample_rgb(db, sprite[i][j]));
+            }
+        }
+    }
 }
 
 //Desenha um sprite a partir de chamadas sucessivas do pixel
