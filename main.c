@@ -332,6 +332,22 @@ void atualizar_poderes(short background_color) {
     }
 }
 
+
+void TelaInicial(){
+    volatile int *KEY_ptr = (int *)KEY_BASE;
+    draw_background(0, 0, palmeiras, 320, 240);
+    char text_top_row[40]    = "Jogo breakout\0";
+    char text_bottom_row[40] = "Aperte Key0 para start\0";
+    video_text(35, 29, text_top_row);
+    video_text(32, 30, text_bottom_row);
+    while(1){
+        int botoes = *KEY_ptr;
+        if (botoes & 0x1) {
+            return; // KEY0 = direita
+        }
+    }
+}
+
 // -------- FUNÇÕES DO CÓDIGO EXEMPLO-----------------
 
 /*******************************************************************************
@@ -355,6 +371,14 @@ int main(void) {
     col_offset = (db == 8) ? 1 : 0;
 
     /* create a message to be displayed on the video and LCD displays */
+
+    TelaInicial();
+
+    char text_top_row[40]    = "             \0";
+    char text_bottom_row[40] = "                      \0";
+    video_text(35, 29, text_top_row);
+    video_text(32, 30, text_bottom_row);
+
     char text_score[40]    = "SCORE\0";
     char text_pontoacao[40] = "0000\0";
 
@@ -376,9 +400,6 @@ int main(void) {
 
     volatile int *KEY_ptr = (int *)KEY_BASE;
 
-    while(1){
-        draw_background(0, 0, palmeiras, 320, 240);
-    }
 
     // Loop principal do jogo
     while (1) {
@@ -392,6 +413,15 @@ int main(void) {
         }
         if (botoes & 0x2) {
             novo_x -= VEL_PLAYER; // KEY1 = esquerda
+        }
+
+        //RESET
+        if(botoes & 0x04) {
+            score =0;
+            video_box(novo_x + LARGURA_PLAYER, Y_PLAYER, player_x + LARGURA_PLAYER - 1, Y_PLAYER + ALTURA_PLAYER - 1, resample_rgb(db, BACKGROUND_BLUE));
+            player_x = 135;
+            video_box(player_x, Y_PLAYER, player_x + LARGURA_PLAYER - 1, Y_PLAYER + ALTURA_PLAYER - 1, resample_rgb(db, COR_PLAYER));
+            EstadoInicial();
         }
 
         if (novo_x < 10){
