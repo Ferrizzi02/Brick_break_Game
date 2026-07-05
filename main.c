@@ -552,7 +552,6 @@ int main(void) {
                     draw_background(0,0,gameover,320,240);
                     video_text(5, 55, text_top_row);
                     video_text(20, 55, text_bottom_row);
-                    while(1);
                 }
                 b--; // corrige o indice apos remocao
                 continue;
